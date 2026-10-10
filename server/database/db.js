@@ -43,4 +43,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_transactions_due ON transactions(due_date);
 `);
 
+// ---- Upgrade for transaction reversal (safe to run many times) ----
+// is_reversed = 1 on the ORIGINAL entry and on its REVERSAL entry, so both are
+// ignored in balances. reversal_of points from the reversal entry to the original.
+const cols = db.prepare('PRAGMA table_info(transactions)').all().map((c) => c.name);
+if (!cols.includes('is_reversed')) {
+  db.exec('ALTER TABLE transactions ADD COLUMN is_reversed INTEGER NOT NULL DEFAULT 0');
+}
+if (!cols.includes('reversal_of')) {
+  db.exec('ALTER TABLE transactions ADD COLUMN reversal_of INTEGER REFERENCES transactions(id)');
+}
+if (!cols.includes('reversal_reason')) {
+  db.exec('ALTER TABLE transactions ADD COLUMN reversal_reason TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_active ON transactions(customer_id, is_reversed)');
+
 module.exports = db;

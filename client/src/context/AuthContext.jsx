@@ -30,6 +30,14 @@ export function AuthProvider({ children }) {
     const data = await api.register(form);
     saveSession(data);
   };
+    // Used by Settings to refresh the shop name everywhere after it is changed
+  const updateUser = (changes) => {
+    setUser((prev) => {
+      const next = { ...prev, ...changes };
+      localStorage.setItem(USER_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
@@ -43,8 +51,8 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('khata-unauthorized', logout);
   }, [logout]);
 
-  return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+ return (
+    <AuthContext.Provider value={{ user, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

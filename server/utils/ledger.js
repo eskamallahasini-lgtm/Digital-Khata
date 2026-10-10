@@ -64,7 +64,7 @@ function getReminders(db, userId) {
               c.name AS customer_name, c.phone AS customer_phone
        FROM transactions t
        JOIN customers c ON c.id = t.customer_id
-       WHERE c.user_id = ?`
+       WHERE c.user_id = ? AND t.is_reversed = 0`
     )
     .all(userId);
 

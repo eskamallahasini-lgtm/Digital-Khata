@@ -6,6 +6,7 @@ import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Customers from './pages/Customers.jsx';
 import CustomerLedger from './pages/CustomerLedger.jsx';
+import Transactions from './pages/Transactions.jsx';
 import Reminders from './pages/Reminders.jsx';
 import Settings from './pages/Settings.jsx';
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerLedger />} />
+        <Route path="/transactions" element={<Transactions />} />
         <Route path="/reminders" element={<Reminders />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

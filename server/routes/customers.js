@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../database/db');
 const auth = require('../middleware/auth');
-const { round2, toCents, todayStr, isValidDate, allocateFifo, computeRisk } = require('../utils/ledger');
+const { round2, toCents, todayStr, isValidDate, allocateFifo } = require('../utils/ledger');
 
 const router = express.Router();
 router.use(auth); // every route below requires login
@@ -19,7 +19,6 @@ function parseId(value) {
 }
 
 // GET /api/customers?q=search
-// GET /api/customers?q=search
 router.get('/', (req, res) => {
   const q = String(req.query.q || '').trim();
   const like = `%${q}%`;
@@ -30,31 +29,18 @@ router.get('/', (req, res) => {
               COALESCE(SUM(CASE WHEN t.type = 'credit'  THEN t.amount END), 0) AS total_credit,
               COALESCE(SUM(CASE WHEN t.type = 'payment' THEN t.amount END), 0) AS total_payments
        FROM customers c
-       LEFT JOIN transactions t ON t.customer_id = c.id
+       LEFT JOIN transactions t ON t.customer_id = c.id AND t.is_reversed = 0
        WHERE c.user_id = ? AND (? = '' OR c.name LIKE ? OR c.phone LIKE ?)
        GROUP BY c.id
        ORDER BY c.name COLLATE NOCASE`
     )
     .all(req.userId, q, like, like);
 
-  // All transactions of this shopkeeper, grouped by customer, for the risk tag
-  const txRows = db
-    .prepare(
-      `SELECT t.id, t.customer_id, t.type, t.amount, t.entry_date, t.due_date
-       FROM transactions t
-       JOIN customers c ON c.id = t.customer_id
-       WHERE c.user_id = ?`
-    )
-    .all(req.userId);
-  const grouped = {};
-  for (const t of txRows) (grouped[t.customer_id] = grouped[t.customer_id] || []).push(t);
-
   const customers = rows.map((r) => ({
     ...r,
     total_credit: round2(r.total_credit),
     total_payments: round2(r.total_payments),
     balance: round2(r.total_credit - r.total_payments),
-    risk: computeRisk(grouped[r.id] || []),
   }));
 
   res.json({ success: true, data: customers });
@@ -101,42 +87,50 @@ router.get('/:id/ledger', (req, res) => {
   const customer = getOwnedCustomer(customerId, req.userId);
   if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
 
-  const txns = db
+  // ALL entries (including reversed ones, so the history stays visible)
+  const allTxns = db
     .prepare(
-      `SELECT id, type, amount, note, entry_date, due_date
+      `SELECT id, type, amount, note, entry_date, due_date, is_reversed, reversal_of, reversal_reason
        FROM transactions WHERE customer_id = ?`
     )
     .all(customerId);
 
-  // Running balance is calculated oldest -> newest, so it is correct
-  // no matter how the list is displayed afterwards.
-  const chronological = [...txns].sort(
+  // Only ACTIVE entries count towards balances and FIFO
+  const active = allTxns.filter((t) => !t.is_reversed);
+
+  const chronological = [...allTxns].sort(
     (a, b) => a.entry_date.localeCompare(b.entry_date) || a.id - b.id
   );
   let runningCents = 0;
   const runningById = {};
   for (const t of chronological) {
+    if (t.is_reversed) continue; // reversed pairs do not change the balance
     runningCents += t.type === 'credit' ? toCents(t.amount) : -toCents(t.amount);
     runningById[t.id] = runningCents / 100;
   }
 
-  // Remaining unpaid amount on each credit entry (FIFO)
   const remainingById = {};
-  for (const c of allocateFifo(txns)) remainingById[c.id] = c.remaining;
+  for (const c of allocateFifo(active)) remainingById[c.id] = c.remaining;
 
-  // Newest first for display
   const transactions = [...chronological].reverse().map((t) => ({
-    ...t,
+    id: t.id,
+    type: t.type,
     amount: round2(t.amount),
-    running_balance: round2(runningById[t.id]),
-    remaining: t.type === 'credit' ? round2(remainingById[t.id]) : null,
+    note: t.note,
+    entry_date: t.entry_date,
+    due_date: t.due_date,
+    status: t.reversal_of ? 'reversal' : t.is_reversed ? 'reversed' : 'active',
+    reversal_of: t.reversal_of,
+    reversal_reason: t.reversal_reason,
+    running_balance: t.is_reversed ? null : round2(runningById[t.id]),
+    remaining: t.type === 'credit' && !t.is_reversed ? round2(remainingById[t.id]) : null,
   }));
 
   const totals = db
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN type = 'credit'  THEN amount END), 0) AS total_credit,
               COALESCE(SUM(CASE WHEN type = 'payment' THEN amount END), 0) AS total_payments
-       FROM transactions WHERE customer_id = ?`
+       FROM transactions WHERE customer_id = ? AND is_reversed = 0`
     )
     .get(customerId);
 
@@ -147,7 +141,6 @@ router.get('/:id/ledger', (req, res) => {
       total_credit: round2(totals.total_credit),
       total_payments: round2(totals.total_payments),
       balance: round2(totals.total_credit - totals.total_payments),
-      risk: computeRisk(txns),
       transactions,
     },
   });
@@ -183,7 +176,6 @@ router.post('/:id/transactions', (req, res) => {
     return res.status(400).json({ success: false, message: 'Entry date is invalid. Use YYYY-MM-DD.' });
   }
 
-  // Due date only makes sense for credit entries
   let dueDate = null;
   if (type === 'credit' && dueDateRaw) {
     if (!isValidDate(dueDateRaw)) {
@@ -206,37 +198,6 @@ router.post('/:id/transactions', (req, res) => {
     success: true,
     data: { id: result.lastInsertRowid, customer_id: customerId, type, amount: round2(amount), note, entry_date: entryDate, due_date: dueDate },
   });
-});
-// PUT /api/customers/:id  (edit name / phone)
-router.put('/:id', (req, res) => {
-  const customerId = parseId(req.params.id);
-  if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer id.' });
-
-  const customer = getOwnedCustomer(customerId, req.userId);
-  if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
-
-  const name = String(req.body.name || '').trim();
-  const phone = String(req.body.phone || '').trim();
-
-  if (!name || !phone) {
-    return res.status(400).json({ success: false, message: 'Customer name and phone number are required.' });
-  }
-  if (name.length > 80) {
-    return res.status(400).json({ success: false, message: 'Name is too long.' });
-  }
-  if (!/^[0-9]{10}$/.test(phone)) {
-    return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits.' });
-  }
-
-  const duplicate = db
-    .prepare('SELECT id FROM customers WHERE user_id = ? AND phone = ? AND id <> ?')
-    .get(req.userId, phone, customerId);
-  if (duplicate) {
-    return res.status(409).json({ success: false, message: 'Another customer already has this phone number.' });
-  }
-
-  db.prepare('UPDATE customers SET name = ?, phone = ? WHERE id = ?').run(name, phone, customerId);
-  res.json({ success: true, data: { id: customerId, name, phone } });
 });
 
 module.exports = router;

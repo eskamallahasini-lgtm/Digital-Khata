@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api.js';
@@ -12,7 +13,9 @@ import { formatMoney, formatDate } from '../services/format.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import MonthlyChart from '../components/MonthlyChart.jsx';
 
+
 export default function Dashboard() {
+  const { t } = useLanguage();
   const { user } = useAuth();
   const [summary, setSummary] = useState(null);
   const [customers, setCustomers] = useState([]);
@@ -23,7 +26,6 @@ export default function Dashboard() {
   const [txModal, setTxModal] = useState(null); // { customer, type }
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, showToast] = useToast();
-  const { t } = useLanguage();
   const [monthly, setMonthly] = useState([]);
 
   // Load summary + customers. Typing in search waits 300 ms before asking the server.

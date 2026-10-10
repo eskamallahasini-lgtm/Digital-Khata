@@ -14,7 +14,7 @@ router.get('/summary', (req, res) => {
               COALESCE(SUM(CASE WHEN t.type = 'credit'  THEN t.amount END), 0) -
               COALESCE(SUM(CASE WHEN t.type = 'payment' THEN t.amount END), 0) AS balance
        FROM customers c
-       LEFT JOIN transactions t ON t.customer_id = c.id
+       LEFT JOIN transactions t ON t.customer_id = c.id AND t.is_reversed = 0
        WHERE c.user_id = ?
        GROUP BY c.id`
     )

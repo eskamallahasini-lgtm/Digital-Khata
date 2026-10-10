@@ -1,30 +1,34 @@
-import { createContext, useContext, useState } from 'react';
-import translations from '../i18n/translations.js';
+import { createContext, useContext, useEffect, useState } from 'react';
+import translations, { LANGUAGES } from '../services/translations.js';
 
 const LanguageContext = createContext(null);
+const LANG_KEY = 'khata_lang';
+
+function loadLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  return LANGUAGES.some((l) => l.code === saved) ? saved : 'en';
+}
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(() => {
-    try {
-      return localStorage.getItem('khata_lang') || 'en';
-    } catch (err) {
-      return 'en';
-    }
-  });
+  const [lang, setLangState] = useState(loadLang);
 
-  const changeLang = (l) => {
-    setLang(l);
-    try {
-      localStorage.setItem('khata_lang', l);
-    } catch (err) {
-      // ignore
-    }
+  const setLang = (code) => {
+    localStorage.setItem(LANG_KEY, code);
+    setLangState(code);
   };
 
-  // Falls back to English, then to the key itself
-  const t = (key) => (translations[lang] && translations[lang][key]) || translations.en[key] || key;
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
-  return <LanguageContext.Provider value={{ lang, changeLang, t }}>{children}</LanguageContext.Provider>;
+  // t('key') gives the text in the current language (falls back to English)
+  const t = (key) => translations[lang]?.[key] ?? translations.en[key] ?? key;
+
+  return (
+    <LanguageContext.Provider value={{ lang, setLang, t, languages: LANGUAGES }}>
+      {children}
+    </LanguageContext.Provider>
+  );
 }
 
 export function useLanguage() {

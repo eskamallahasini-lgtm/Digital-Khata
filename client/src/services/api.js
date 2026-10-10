@@ -48,7 +48,18 @@ const api = {
   deleteTransaction: (id) => request(`/transactions/${id}`, { method: 'DELETE' }),
 
   getSummary: () => request('/summary'),
-  getReminders: () => request('/reminders'),
+   getReminders: () => request('/reminders'),
+
+  getTransactions: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/transactions${qs ? '?' + qs : ''}`);
+  },
+  reverseTransaction: (id, reason) =>
+    request(`/transactions/${id}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  askCopilot: (message) => request('/copilot', { method: 'POST', body: JSON.stringify({ message }) }),
+  
+  updateProfile: (shop_name) => request('/settings/profile', { method: 'PUT', body: JSON.stringify({ shop_name }) }),
+  changePassword: (body) => request('/settings/password', { method: 'PUT', body: JSON.stringify(body) }),
 
     updateCustomer: (id, body) => request(`/customers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   updateTransaction: (id, body) => request(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

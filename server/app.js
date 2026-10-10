@@ -19,11 +19,14 @@ const authRoutes = require('./routes/auth');
 const customerRoutes = require('./routes/customers');
 const transactionRoutes = require('./routes/transactions');
 const summaryRoutes = require('./routes/summary');
+const copilotRoutes = require('./routes/copilot');
+const settingsRoutes = require('./routes/settings');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
+
 
 // Slow down password guessing: max 30 login/register attempts per 15 minutes per IP
 const authLimiter = rateLimit({
@@ -49,7 +52,9 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/transactions', transactionRoutes);
-app.use('/api', summaryRoutes); // /api/summary and /api/reminders
+app.use('/api/copilot', copilotRoutes);
+app.use('/api', summaryRoutes);
+app.use('/api/settings', settingsRoutes); // /api/summary and /api/reminders
 
 // Unknown API route
 app.use('/api', (req, res) => {
